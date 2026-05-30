@@ -11,7 +11,7 @@ intents = discord.Intents.all()
 bot = commands.Bot(".", intents=intents, help_command=None)
 
 REPORT_CHANNEL_ID = 1510116397878087812
-
+ALLOWED_ROLE_ID = 1510089258273210390
 class ReportView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -90,6 +90,7 @@ class ReportView(discord.ui.View):
 
 
 @bot.command()
+@commands.has_role(ALLOWED_ROLE_ID)
 async def report(ctx, scripter: str, media_link: str = None):
 
     attachment = None
