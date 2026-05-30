@@ -16,6 +16,15 @@ ALLOWED_ROLE_ID = 1510089258273210390
 PING_ROLE_ID = 1510143641132208339
 
 
+def has_report_permission():
+    async def predicate(ctx):
+        return (
+            ctx.author.guild_permissions.administrator
+            or discord.utils.get(ctx.author.roles, id=ALLOWED_ROLE_ID)
+        )
+    return commands.check(predicate)
+
+
 class ReportView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
@@ -25,7 +34,11 @@ class ReportView(discord.ui.View):
         style=discord.ButtonStyle.green,
         custom_id="approve_report"
     )
-    async def approve_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def approve_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
 
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
@@ -46,7 +59,10 @@ class ReportView(discord.ui.View):
                     inline=False
                 )
 
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(
+            embed=embed,
+            view=self
+        )
 
         await interaction.response.send_message(
             "Report aprovado com sucesso.",
@@ -58,7 +74,11 @@ class ReportView(discord.ui.View):
         style=discord.ButtonStyle.red,
         custom_id="deny_report"
     )
-    async def deny_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def deny_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
 
         if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
@@ -79,7 +99,10 @@ class ReportView(discord.ui.View):
                     inline=False
                 )
 
-        await interaction.message.edit(embed=embed, view=self)
+        await interaction.message.edit(
+            embed=embed,
+            view=self
+        )
 
         await interaction.response.send_message(
             "Report negado com sucesso.",
@@ -88,7 +111,7 @@ class ReportView(discord.ui.View):
 
 
 @bot.command()
-@commands.has_role(ALLOWED_ROLE_ID)
+@has_report_permission()
 async def report(ctx, scripter: str, media_link: str = None):
 
     attachment = None
@@ -134,7 +157,7 @@ async def report(ctx, scripter: str, media_link: str = None):
     # apaga comando
     await ctx.message.delete()
 
-    # mensagem pública
+    # embed público
     public_embed = discord.Embed(
         title="🚨 User Reported",
         description=f"**{scripter}** has been reported and will be reviewed by the managers.",
@@ -148,9 +171,10 @@ async def report(ctx, scripter: str, media_link: str = None):
 
     await ctx.send(embed=public_embed)
 
-    # canal staff
+    # canal de reports
     report_channel = bot.get_channel(REPORT_CHANNEL_ID)
 
+    # embed staff
     staff_embed = discord.Embed(
         title="New Report",
         color=discord.Color.yellow()
@@ -174,7 +198,7 @@ async def report(ctx, scripter: str, media_link: str = None):
         inline=False
     )
 
-    # se for imagem/link de imagem
+    # links de imagem
     image_extensions = (
         ".png",
         ".jpg",
@@ -183,29 +207,50 @@ async def report(ctx, scripter: str, media_link: str = None):
         ".webp"
     )
 
-    if file_url and any(file_url.lower().endswith(ext) for ext in image_extensions):
-        staff_embed.set_image(url=file_url)
-
-    await report_channel.send(
-        content=f"||<@&{PING_ROLE_ID}>||",
-        embed=staff_embed,
-        view=ReportView()
-    )
-
-    # envia attachment real
+    # attachment
     if attachment:
-        file = await attachment.to_file()
-        await report_channel.send(file=file)
 
-    # envia link tipo medal/streamable
-    elif file_url:
+        file = await attachment.to_file()
+
+        # imagem anexada aparece direto no embed
+        if (
+            attachment.content_type
+            and attachment.content_type.startswith("image")
+        ):
+            staff_embed.set_image(
+                url=f"attachment://{attachment.filename}"
+            )
+
+        await report_channel.send(
+            content=f"||<@&{PING_ROLE_ID}>||",
+            embed=staff_embed,
+            file=file,
+            view=ReportView()
+        )
+
+    else:
+
+        # se for link de imagem
+        if any(
+            file_url.lower().endswith(ext)
+            for ext in image_extensions
+        ):
+            staff_embed.set_image(url=file_url)
+
+        await report_channel.send(
+            content=f"||<@&{PING_ROLE_ID}>||",
+            embed=staff_embed,
+            view=ReportView()
+        )
+
+        # envia link medal/streamable/etc
         await report_channel.send(file_url)
 
 
 @report.error
 async def report_error(ctx, error):
 
-    if isinstance(error, commands.MissingRole):
+    if isinstance(error, commands.CheckFailure):
         await ctx.send(
             "Você não tem permissão para usar esse comando."
         )
