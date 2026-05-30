@@ -9,20 +9,16 @@ load_dotenv()
 TOKEN = os.getenv("TOKEN")
 
 intents = discord.Intents.all()
-bot = commands.Bot(".", intents=intents, help_command=None)
+
+bot = commands.Bot(
+    command_prefix=".",
+    intents=intents,
+    help_command=None
+)
 
 REPORT_CHANNEL_ID = 1510116397878087812
 ALLOWED_ROLE_ID = 1510089258273210390
 PING_ROLE_ID = 1510143641132208339
-
-
-def has_report_permission():
-    async def predicate(ctx):
-        return (
-            ctx.author.guild_permissions.administrator
-            or discord.utils.get(ctx.author.roles, id=ALLOWED_ROLE_ID)
-        )
-    return commands.check(predicate)
 
 
 class ReportView(discord.ui.View):
@@ -110,19 +106,63 @@ class ReportView(discord.ui.View):
         )
 
 
-@bot.command()
-@has_report_permission()
-async def report(ctx, scripter: str, media_link: str = None):
+# sincroniza slash commands
+@bot.event
+async def on_ready():
 
-    attachment = None
+    try:
+        synced = await bot.tree.sync()
+        print(f"{len(synced)} slash commands sincronizados.")
+    except Exception as e:
+        print(e)
+
+    print(f"Logado como {bot.user}")
+
+
+# verifica permissão
+def can_use_report(interaction: discord.Interaction):
+
+    return (
+        interaction.user.guild_permissions.administrator
+        or discord.utils.get(
+            interaction.user.roles,
+            id=ALLOWED_ROLE_ID
+        )
+    )
+
+
+@bot.tree.command(
+    name="report",
+    description="Envia um report para a staff."
+)
+@app_commands.describe(
+    scripter="Nome do jogador reportado",
+    media_link="Link do Medal/Streamable/etc",
+    attachment="Imagem ou vídeo"
+)
+async def report(
+    interaction: discord.Interaction,
+    scripter: str,
+    media_link: str = None,
+    attachment: discord.Attachment = None
+):
+
+    # permissão
+    if not can_use_report(interaction):
+
+        await interaction.response.send_message(
+            "Você não tem permissão para usar esse comando.",
+            ephemeral=True
+        )
+        return
+
     file_url = None
 
-    # attachment enviado
-    if ctx.message.attachments:
-        attachment = ctx.message.attachments[0]
+    # attachment
+    if attachment:
         file_url = attachment.url
 
-    # link enviado
+    # link
     elif media_link:
 
         allowed_sites = [
@@ -139,25 +179,28 @@ async def report(ctx, scripter: str, media_link: str = None):
             if any(site in media_link for site in allowed_sites):
                 file_url = media_link
             else:
-                await ctx.send(
-                    "Apenas links do Medal, Streamable, Discord CDN, Imgur ou Gyazo são permitidos."
+                await interaction.response.send_message(
+                    "Link não permitido.",
+                    ephemeral=True
                 )
                 return
 
         else:
-            await ctx.send("Link inválido.")
+            await interaction.response.send_message(
+                "Link inválido.",
+                ephemeral=True
+            )
             return
 
     else:
-        await ctx.send(
-            "Você precisa anexar uma imagem/vídeo ou enviar um link."
+
+        await interaction.response.send_message(
+            "Você precisa enviar uma imagem/vídeo ou link.",
+            ephemeral=True
         )
         return
 
-    # apaga comando
-    await ctx.message.delete()
-
-    # embed público
+    # resposta pública
     public_embed = discord.Embed(
         title="🚨 User Reported",
         description=f"**{scripter}** has been reported and will be reviewed by the managers.",
@@ -165,16 +208,17 @@ async def report(ctx, scripter: str, media_link: str = None):
     )
 
     public_embed.set_footer(
-        text=f"Reported by {ctx.author}",
-        icon_url=ctx.author.display_avatar.url
+        text=f"Reported by {interaction.user}",
+        icon_url=interaction.user.display_avatar.url
     )
 
-    await ctx.send(embed=public_embed)
+    await interaction.response.send_message(
+        embed=public_embed
+    )
 
-    # canal de reports
     report_channel = bot.get_channel(REPORT_CHANNEL_ID)
 
-    # embed staff
+    # embed da staff
     staff_embed = discord.Embed(
         title="New Report",
         color=discord.Color.yellow()
@@ -188,7 +232,7 @@ async def report(ctx, scripter: str, media_link: str = None):
 
     staff_embed.add_field(
         name="🛡️ Staff",
-        value=ctx.author.mention,
+        value=interaction.user.mention,
         inline=True
     )
 
@@ -198,21 +242,12 @@ async def report(ctx, scripter: str, media_link: str = None):
         inline=False
     )
 
-    # links de imagem
-    image_extensions = (
-        ".png",
-        ".jpg",
-        ".jpeg",
-        ".gif",
-        ".webp"
-    )
-
     # attachment
     if attachment:
 
         file = await attachment.to_file()
 
-        # imagem anexada aparece direto no embed
+        # imagem
         if (
             attachment.content_type
             and attachment.content_type.startswith("image")
@@ -230,7 +265,15 @@ async def report(ctx, scripter: str, media_link: str = None):
 
     else:
 
-        # se for link de imagem
+        # imagem por link
+        image_extensions = (
+            ".png",
+            ".jpg",
+            ".jpeg",
+            ".gif",
+            ".webp"
+        )
+
         if any(
             file_url.lower().endswith(ext)
             for ext in image_extensions
@@ -243,17 +286,8 @@ async def report(ctx, scripter: str, media_link: str = None):
             view=ReportView()
         )
 
-        # envia link medal/streamable/etc
+        # medal / streamable
         await report_channel.send(file_url)
-
-
-@report.error
-async def report_error(ctx, error):
-
-    if isinstance(error, commands.CheckFailure):
-        await ctx.send(
-            "Você não tem permissão para usar esse comando."
-        )
 
 
 bot.run(TOKEN)
